@@ -12,6 +12,7 @@ import {
   pendulumPeriod,
   simulateSmash,
   stepPendulum,
+  type PendulumState,
   type SmashSimulation,
 } from '../src/pendulum';
 
@@ -66,7 +67,11 @@ describe('stepPendulum', () => {
   });
 
   it('阻尼让摆幅衰减：第一个回摆最高点低于释放角', () => {
-    let s = { theta: THETA0, omega: 0, L: PENDULUM_LENGTHS[0] };
+    let s: PendulumState = {
+      theta: THETA0,
+      omega: 0,
+      L: PENDULUM_LENGTHS[0],
+    };
     let prevOmega = s.omega;
     let firstTurn: number | null = null;
     for (let i = 0; i < 240 * 3; i++) {
