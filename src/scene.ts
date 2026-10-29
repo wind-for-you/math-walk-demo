@@ -1,36 +1,78 @@
 import * as THREE from 'three';
 import {
-  BALL_COLORS,
-  SHELL_RADIUS,
-  type RaceResult,
-  type RaceBallResult,
-} from './race';
-import { PHASE_BOUNDS, type TimelineState } from './timeline';
+  COLORS,
+  PENDULUM_LENGTHS,
+  PIVOTS,
+  THETA0,
+  VASE,
+  bobPosition,
+  type SmashSimulation,
+} from './pendulum';
+import {
+  PHASE_BOUNDS,
+  RACE_DURATION_SECONDS,
+  type TimelineState,
+} from './timeline';
 
 export type DemoScene = {
   renderer: THREE.WebGLRenderer;
   dispose: () => void;
-  setRace: (race: RaceResult) => void;
+  setSimulation: (sim: SmashSimulation, seed: number) => void;
   update: (state: TimelineState) => void;
 };
 
-type BallVisual = {
-  result: RaceBallResult | null;
+type PendulumVisual = {
   color: THREE.Color;
-  trailGeo: THREE.BufferGeometry;
-  trailMat: THREE.LineBasicMaterial;
-  trailPositions: Float32Array;
-  trailColors: Float32Array;
-  ball: THREE.Mesh;
-  ballMat: THREE.MeshStandardMaterial;
-  flash: THREE.Mesh;
-  flashMat: THREE.MeshBasicMaterial;
+  rope: THREE.Line;
+  ropePositions: Float32Array;
+  ropeMat: THREE.LineBasicMaterial;
+  bob: THREE.Mesh;
+  bobMat: THREE.MeshStandardMaterial;
+  glow: THREE.Mesh;
+  glowMat: THREE.MeshBasicMaterial;
 };
 
+const BOB_RADIUS = 0.11;
 const FLASH_DURATION = 0.55;
+const SHARD_LIFE = 1.5;
+const SHARD_COUNT = 18;
+const BASE_FOG = 0.026;
+
+const CAMERA_FOV = 50;
+const FIT_HEIGHT = 4.7;
+const WIDE_WIDTH = 8.8;
+const CLOSE_WIDTH = 5.0;
+const WIDE_CENTER = 0.4;
+const CLOSE_CENTER = -0.5;
 
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** 在预计算样本中线性插值出 t 时刻的三摆状态 */
+function sampleStates(sim: SmashSimulation, t: number) {
+  const clamped = Math.min(sim.durationSeconds, Math.max(0, t));
+  const raw = clamped / sim.dt;
+  const i0 = Math.min(sim.samples.length - 1, Math.floor(raw));
+  const i1 = Math.min(sim.samples.length - 1, i0 + 1);
+  const f = raw - i0;
+  return sim.samples[i0]!.states.map((a, index) => {
+    const b = sim.samples[i1]!.states[index]!;
+    return {
+      theta: a.theta + (b.theta - a.theta) * f,
+      omega: a.omega + (b.omega - a.omega) * f,
+      L: a.L,
+    };
+  });
 }
 
 export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
@@ -44,270 +86,473 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
   renderer.setClearColor(0x05070f, 1);
 
   const scene = new THREE.Scene();
-  const baseFogDensity = 0.045;
-  scene.fog = new THREE.FogExp2(0x05070f, baseFogDensity);
+  const fog = new THREE.FogExp2(0x05070f, BASE_FOG);
+  scene.fog = fog;
 
   const camera = new THREE.PerspectiveCamera(
-    50,
+    CAMERA_FOV,
     window.innerWidth / window.innerHeight,
     0.05,
     200,
   );
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const keyLight = new THREE.PointLight(0x9fd6ff, 25, 30);
-  keyLight.position.set(3, 4, 5);
+  scene.add(new THREE.HemisphereLight(0x8fb4ff, 0x090b12, 0.55));
+  const keyLight = new THREE.PointLight(0x9fd6ff, 26, 40);
+  keyLight.position.set(4, 6.5, 9);
   scene.add(keyLight);
+
+  const vaseLight = new THREE.PointLight(0xffb35c, 5, 7);
+  vaseLight.position.set(VASE.x, VASE.y + 0.4, 1.4);
+  scene.add(vaseLight);
+
+  const impactLight = new THREE.PointLight(0xffd08a, 0, 8);
+  scene.add(impactLight);
 
   const root = new THREE.Group();
   scene.add(root);
 
-  // 包裹壳：半透明球面 + 淡线框
-  const shellGeo = new THREE.SphereGeometry(SHELL_RADIUS, 32, 20);
-  const shellMat = new THREE.MeshBasicMaterial({
-    color: 0x4d7ea8,
-    transparent: true,
-    opacity: 0,
-    side: THREE.DoubleSide,
-    depthWrite: false,
+  const geos: THREE.BufferGeometry[] = [];
+  const mats: THREE.Material[] = [];
+
+  // ---- 地面与支架 ----
+  const floorGeo = new THREE.CircleGeometry(7, 64);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x070b13,
+    roughness: 0.95,
+    metalness: 0,
   });
-  const shell = new THREE.Mesh(shellGeo, shellMat);
-  root.add(shell);
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.04;
+  root.add(floor);
+  geos.push(floorGeo);
+  mats.push(floorMat);
 
-  const shellWireGeo = new THREE.WireframeGeometry(shellGeo);
-  const shellWireMat = new THREE.LineBasicMaterial({
-    color: 0x5f8fb4,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
+  const grid = new THREE.GridHelper(12, 24, 0x1b3045, 0x0c1520);
+  grid.position.y = -0.03;
+  root.add(grid);
+  geos.push(grid.geometry);
+  if (Array.isArray(grid.material)) mats.push(...grid.material);
+  else mats.push(grid.material);
+
+  const beamGeo = new THREE.BoxGeometry(3.0, 0.08, 0.16);
+  const beamMat = new THREE.MeshStandardMaterial({
+    color: 0x1e2938,
+    metalness: 0.75,
+    roughness: 0.35,
   });
-  const shellWire = new THREE.LineSegments(shellWireGeo, shellWireMat);
-  root.add(shellWire);
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.set(0, 3.48, -0.02);
+  root.add(beam);
+  geos.push(beamGeo);
+  mats.push(beamMat);
 
-  // 原点
-  const anchorGeo = new THREE.SphereGeometry(0.035, 12, 12);
-  const anchorMat = new THREE.MeshBasicMaterial({
-    color: 0xffc857,
-    transparent: true,
-    opacity: 0.9,
-  });
-  const anchor = new THREE.Mesh(anchorGeo, anchorMat);
-  root.add(anchor);
+  // ---- 三个摆 ----
+  const bobGeo = new THREE.SphereGeometry(BOB_RADIUS, 24, 16);
+  const glowGeo = new THREE.SphereGeometry(BOB_RADIUS * 1.9, 16, 12);
+  const anchorGeo = new THREE.SphereGeometry(0.05, 12, 12);
+  geos.push(bobGeo, glowGeo, anchorGeo);
 
-  const ballGeo = new THREE.SphereGeometry(0.06, 16, 16);
-  const flashGeo = new THREE.SphereGeometry(0.11, 12, 12);
-  const maxVertices = 401; // DEFAULT_STEPS <= 400 → points <= 401
+  const visuals: PendulumVisual[] = [];
+  for (let i = 0; i < PENDULUM_LENGTHS.length; i++) {
+    const color = new THREE.Color(COLORS[i]!);
+    const pivot = PIVOTS[i]!;
 
-  const visuals: BallVisual[] = [];
-  for (let i = 0; i < BALL_COLORS.length; i++) {
-    const color = new THREE.Color(BALL_COLORS[i]!);
-
-    const trailPositions = new Float32Array(maxVertices * 3);
-    const trailColors = new Float32Array(maxVertices * 4);
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute(
+    const ropePositions = new Float32Array([
+      pivot.x,
+      pivot.y,
+      0,
+      pivot.x,
+      pivot.y - PENDULUM_LENGTHS[i]!,
+      0,
+    ]);
+    const ropeGeo = new THREE.BufferGeometry();
+    ropeGeo.setAttribute(
       'position',
-      new THREE.BufferAttribute(trailPositions, 3),
+      new THREE.BufferAttribute(ropePositions, 3),
     );
-    trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColors, 4));
-    trailGeo.setDrawRange(0, 0);
-    const trailMat = new THREE.LineBasicMaterial({
-      vertexColors: true,
+    const ropeMat = new THREE.LineBasicMaterial({
+      color,
       transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.75,
     });
-    const trail = new THREE.Line(trailGeo, trailMat);
-    root.add(trail);
+    const rope = new THREE.Line(ropeGeo, ropeMat);
+    rope.frustumCulled = false;
+    root.add(rope);
 
-    const ballMat = new THREE.MeshStandardMaterial({
+    const bobMat = new THREE.MeshStandardMaterial({
       color,
       emissive: color,
-      emissiveIntensity: 0.8,
-      roughness: 0.35,
-      metalness: 0.1,
+      emissiveIntensity: 1.1,
+      roughness: 0.3,
+      metalness: 0.15,
       transparent: true,
       opacity: 1,
     });
-    const ball = new THREE.Mesh(ballGeo, ballMat);
-    root.add(ball);
+    const bob = new THREE.Mesh(bobGeo, bobMat);
+    root.add(bob);
 
-    const flashMat = new THREE.MeshBasicMaterial({
+    const glowMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0,
+      opacity: 0.18,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
-    const flash = new THREE.Mesh(flashGeo, flashMat);
-    flash.visible = false;
-    root.add(flash);
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    root.add(glow);
 
-    visuals.push({
-      result: null,
+    const anchorMat = new THREE.MeshBasicMaterial({
       color,
-      trailGeo,
-      trailMat,
-      trailPositions,
-      trailColors,
-      ball,
-      ballMat,
-      flash,
-      flashMat,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const anchor = new THREE.Mesh(anchorGeo, anchorMat);
+    anchor.position.set(pivot.x, pivot.y, 0);
+    root.add(anchor);
+
+    geos.push(ropeGeo);
+    mats.push(ropeMat, bobMat, glowMat, anchorMat);
+    visuals.push({
+      color,
+      rope,
+      ropePositions,
+      ropeMat,
+      bob,
+      bobMat,
+      glow,
+      glowMat,
     });
   }
 
-  let race: RaceResult | null = null;
+  // ---- 花瓶 ----
+  const vaseGroup = new THREE.Group();
+  vaseGroup.position.set(VASE.x, VASE.y, 0);
+  root.add(vaseGroup);
+
+  const profile = [
+    [0.001, -0.52],
+    [0.1, -0.5],
+    [0.135, -0.38],
+    [0.155, -0.2],
+    [0.16, 0.0],
+    [0.13, 0.18],
+    [0.075, 0.3],
+    [0.07, 0.38],
+    [0.095, 0.45],
+    [0.12, 0.52],
+  ].map(([x, y]) => new THREE.Vector2(x!, y!));
+  const vaseGeo = new THREE.LatheGeometry(profile, 40);
+  const vaseMat = new THREE.MeshStandardMaterial({
+    color: 0xffd89a,
+    emissive: 0xff9c3d,
+    emissiveIntensity: 0.8,
+    roughness: 0.28,
+    metalness: 0.3,
+    transparent: true,
+    opacity: 1,
+  });
+  const vase = new THREE.Mesh(vaseGeo, vaseMat);
+  vaseGroup.add(vase);
+  geos.push(vaseGeo);
+  mats.push(vaseMat);
+
+  const rimGeo = new THREE.TorusGeometry(0.12, 0.012, 8, 32);
+  const rim = new THREE.Mesh(rimGeo, vaseMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.52;
+  vaseGroup.add(rim);
+  geos.push(rimGeo);
+
+  const pedestalGeo = new THREE.CylinderGeometry(0.24, 0.34, 0.28, 24);
+  const pedestalMat = new THREE.MeshStandardMaterial({
+    color: 0x1b2330,
+    roughness: 0.8,
+    metalness: 0.2,
+    transparent: true,
+    opacity: 1,
+  });
+  const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+  pedestal.position.set(VASE.x, 0.14, 0);
+  root.add(pedestal);
+  geos.push(pedestalGeo);
+  mats.push(pedestalMat);
+
+  const baseRingGeo = new THREE.TorusGeometry(0.37, 0.011, 8, 48);
+  const baseRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffb35c,
+    transparent: true,
+    opacity: 0.45,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const baseRing = new THREE.Mesh(baseRingGeo, baseRingMat);
+  baseRing.rotation.x = -Math.PI / 2;
+  baseRing.position.set(VASE.x, 0.02, 0);
+  root.add(baseRing);
+  geos.push(baseRingGeo);
+  mats.push(baseRingMat);
+
+  // ---- 砸中闪光与碎片 ----
+  const flashGeo = new THREE.SphereGeometry(0.24, 20, 14);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xffd9a0,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const flash = new THREE.Mesh(flashGeo, flashMat);
+  flash.visible = false;
+  flash.frustumCulled = false;
+  root.add(flash);
+
+  const flashRingGeo = new THREE.TorusGeometry(0.4, 0.02, 8, 48);
+  const flashRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffc06a,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const flashRing = new THREE.Mesh(flashRingGeo, flashRingMat);
+  flashRing.visible = false;
+  flashRing.frustumCulled = false;
+  root.add(flashRing);
+  geos.push(flashGeo, flashRingGeo);
+  mats.push(flashMat, flashRingMat);
+
+  const shardGeo = new THREE.TetrahedronGeometry(0.075);
+  const shardMat = new THREE.MeshBasicMaterial({
+    color: 0xffcf8a,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const shards: THREE.Mesh[] = [];
+  const shardVels: { x: number; y: number; z: number }[] = [];
+  for (let i = 0; i < SHARD_COUNT; i++) {
+    const mesh = new THREE.Mesh(shardGeo, shardMat);
+    mesh.visible = false;
+    mesh.frustumCulled = false;
+    root.add(mesh);
+    shards.push(mesh);
+    const angle = i * 2.399963229728653;
+    const speed = 1.5 + (i % 7) * 0.18;
+    shardVels.push({
+      x: Math.cos(angle) * speed,
+      y: (0.35 + (i % 5) * 0.13) * speed,
+      z: Math.sin(angle) * speed * 0.7,
+    });
+  }
+  geos.push(shardGeo);
+  mats.push(shardMat);
+
+  // ---- 状态 ----
+  let sim: SmashSimulation | null = null;
   let cameraPhase = 0;
+  let smashWallTime = Infinity;
+  const smashOrigin = new THREE.Vector3(VASE.x, VASE.y, 0);
 
-  function setRace(next: RaceResult): void {
-    race = next;
-    cameraPhase = ((next.seed % 1000) / 1000) * Math.PI * 2;
+  function setSimulation(next: SmashSimulation, seed: number): void {
+    sim = next;
+    cameraPhase = ((seed % 1000) / 1000) * Math.PI * 2;
+
+    const winner =
+      next.winnerIndex === null ? null : next.results[next.winnerIndex]!;
+    smashWallTime =
+      winner && winner.hitTime !== null
+        ? (winner.hitTime / Math.max(next.durationSeconds, 1e-6)) *
+          RACE_DURATION_SECONDS
+        : Infinity;
+
+    if (winner && winner.hitTime !== null) {
+      const state = sampleStates(next, winner.hitTime)[winner.index]!;
+      const p = bobPosition(PIVOTS[winner.index]!, state.L, state.theta);
+      smashOrigin.set(p.x, p.y, 0);
+    } else {
+      smashOrigin.set(VASE.x, VASE.y, 0);
+    }
+
+    vaseGroup.visible = true;
+    vaseMat.opacity = 1;
+    pedestalMat.opacity = 1;
+    baseRingMat.opacity = 0.45;
+    flash.visible = false;
+    flashRing.visible = false;
+    flashMat.opacity = 0;
+    flashRingMat.opacity = 0;
+    impactLight.intensity = 0;
+    shardMat.opacity = 1;
+    for (const shard of shards) shard.visible = false;
+    for (const v of visuals) {
+      v.bobMat.emissiveIntensity = 1.1;
+      v.bobMat.opacity = 1;
+      v.bob.scale.setScalar(1);
+      v.glowMat.opacity = 0.18;
+      v.ropeMat.opacity = 0.75;
+    }
+    fog.density = BASE_FOG;
     renderer.setClearColor(0x05070f, 1);
-
-    for (let i = 0; i < visuals.length; i++) {
-      const v = visuals[i]!;
-      const ball = next.balls[i] ?? null;
-      v.result = ball;
-      v.trailGeo.setDrawRange(0, ball ? 1 : 0);
-      v.trailPositions.fill(0);
-      v.trailColors.fill(0);
-      v.trailGeo.attributes.position!.needsUpdate = true;
-      v.trailGeo.attributes.color!.needsUpdate = true;
-      v.trailMat.opacity = 0.95;
-
-      v.ball.position.set(0, 0, 0);
-      v.ball.scale.setScalar(1);
-      v.ball.visible = ball !== null;
-      v.ballMat.opacity = 1;
-      v.ballMat.emissiveIntensity = 0.8;
-
-      v.flash.visible = false;
-      v.flashMat.opacity = 0;
-      if (ball && ball.hitStep !== null) {
-        const p = ball.walk.points[ball.hitStep]!;
-        v.flash.position.set(p.x, p.y, p.z);
-      }
-    }
   }
 
-  function writeTrail(
-    v: BallVisual,
-    points: RaceBallResult['walk']['points'],
-    count: number,
-    fade: number,
-  ): void {
-    const n = Math.max(1, Math.min(count, points.length));
-    for (let i = 0; i < n; i++) {
-      const p = points[i]!;
-      v.trailPositions[i * 3] = p.x;
-      v.trailPositions[i * 3 + 1] = p.y;
-      v.trailPositions[i * 3 + 2] = p.z;
-      // 越新越亮
-      const head = n <= 1 ? 1 : i / (n - 1);
-      const alpha = (0.12 + 0.88 * head) * fade;
-      v.trailColors[i * 4] = v.color.r;
-      v.trailColors[i * 4 + 1] = v.color.g;
-      v.trailColors[i * 4 + 2] = v.color.b;
-      v.trailColors[i * 4 + 3] = alpha;
+  function updateCamera(state: TimelineState, simTime: number): void {
+    const zoom = smoothstep(0.15, 1.1, simTime);
+    let width = WIDE_WIDTH + (CLOSE_WIDTH - WIDE_WIDTH) * zoom;
+    const centerX = WIDE_CENTER + (CLOSE_CENTER - WIDE_CENTER) * zoom;
+    if (state.phase === 'result') {
+      width *= 1 - 0.08 * state.resultProgress;
+    } else if (state.phase === 'reset') {
+      width *= 1 + 0.12 * state.resetProgress;
     }
-    v.trailGeo.attributes.position!.needsUpdate = true;
-    v.trailGeo.attributes.color!.needsUpdate = true;
-    v.trailGeo.setDrawRange(0, n);
-  }
 
-  function framingDistance(): number {
-    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     const aspect = Math.max(0.2, camera.aspect);
-    const fitR = SHELL_RADIUS + 0.55;
-    const halfH = Math.max(fitR, fitR / aspect);
-    return halfH / Math.tan(vFov / 2);
-  }
+    const distance = Math.max(
+      FIT_HEIGHT / 2 / tanHalf,
+      width / 2 / (tanHalf * aspect),
+    );
 
-  function updateCamera(state: TimelineState): void {
-    const orbit = cameraPhase + state.loopTime * 0.09;
-    const r = framingDistance() + state.raceProgress * 0.4;
-    const y = 0.45 + state.raceProgress * 0.3;
-    camera.position.set(Math.cos(orbit) * r, y, Math.sin(orbit) * r);
-    camera.lookAt(0, 0, 0);
+    const orbit = cameraPhase + state.loopTime * 0.045;
+    const sway = Math.sin(orbit) * 0.28;
+    camera.position.set(centerX + sway, 3.35 + 0.2 * zoom, distance);
+    camera.lookAt(centerX + sway * 0.2, 1.55, 0);
   }
 
   function update(state: TimelineState): void {
-    updateCamera(state);
-
-    if (!race) {
-      renderer.render(scene, camera);
-      return;
-    }
-
     const fade = state.phase === 'reset' ? 1 - state.resetProgress : 1;
-    const introGlow =
-      state.phase === 'intro'
-        ? clamp01(state.localTime / PHASE_BOUNDS.introEnd)
-        : 1;
-    const shellMul = state.phase === 'reset' ? fade : introGlow;
-    shellMat.opacity = 0.09 * shellMul;
-    shellWireMat.opacity = 0.16 * shellMul;
+    const simTime = sim
+      ? state.phase === 'intro'
+        ? 0
+        : state.raceProgress * sim.durationSeconds
+      : 0;
 
-    const steps = Math.max(1, race.balls[0]!.walk.points.length - 1);
-    const elapsedSteps = state.raceProgress * steps;
+    updateCamera(state, simTime);
 
-    for (const v of visuals) {
-      const ball = v.result;
-      if (!ball) {
-        v.ball.visible = false;
-        continue;
+    if (sim) {
+      const winner =
+        sim.winnerIndex === null ? null : sim.results[sim.winnerIndex]!;
+      const hitTime = winner?.hitTime ?? null;
+      const smashed = hitTime !== null && simTime >= hitTime;
+
+      const lift =
+        state.phase === 'intro'
+          ? easeInOutCubic(
+              clamp01(state.localTime / PHASE_BOUNDS.introEnd),
+            )
+          : 1;
+
+      for (let i = 0; i < visuals.length; i++) {
+        const v = visuals[i]!;
+        let theta: number;
+        let length: number;
+
+        if (state.phase === 'intro') {
+          length = PENDULUM_LENGTHS[i]!;
+          theta = THETA0 * lift;
+        } else {
+          const frozen = hitTime !== null && winner?.index === i && smashed;
+          const t = frozen ? hitTime! : simTime;
+          const sample = sampleStates(sim, t)[i]!;
+          theta = sample.theta;
+          length = sample.L;
+        }
+
+        const pivot = PIVOTS[i]!;
+        const p = bobPosition(pivot, length, theta);
+
+        v.ropePositions[0] = pivot.x;
+        v.ropePositions[1] = pivot.y;
+        v.ropePositions[2] = 0;
+        v.ropePositions[3] = p.x;
+        v.ropePositions[4] = p.y;
+        v.ropePositions[5] = 0;
+        v.rope.geometry.attributes.position!.needsUpdate = true;
+
+        v.bob.position.set(p.x, p.y, 0);
+        v.glow.position.copy(v.bob.position);
+
+        const isWinner = winner !== null && winner.index === i;
+        if (state.phase === 'result' && isWinner) {
+          const pulse = 0.5 + 0.5 * Math.sin(state.localTime * 6.5);
+          v.bobMat.emissiveIntensity = 1.2 + 1.8 * pulse;
+          v.bob.scale.setScalar(1 + 0.12 * pulse);
+          v.glowMat.opacity = (0.2 + 0.2 * pulse) * fade;
+        } else {
+          v.bobMat.emissiveIntensity = 1.1;
+          v.bob.scale.setScalar(1);
+          v.glowMat.opacity = 0.18 * fade;
+        }
+        v.bobMat.opacity = fade;
+        v.ropeMat.opacity = 0.75 * fade;
       }
-      v.ball.visible = true;
-      const hitStep = ball.hitStep;
-      const capped = hitStep === null ? elapsedSteps : Math.min(elapsedSteps, hitStep);
-      const visibleCount = Math.max(1, Math.floor(capped) + 1);
 
-      const points = ball.walk.points;
-      writeTrail(v, points, visibleCount, fade);
-
-      const i0 = Math.min(Math.floor(capped), points.length - 1);
-      const i1 = Math.min(points.length - 1, i0 + 1);
-      const frac = capped - i0;
-      const a = points[i0]!;
-      const b = points[i1]!;
-      v.ball.position.set(
-        a.x + (b.x - a.x) * frac,
-        a.y + (b.y - a.y) * frac,
-        a.z + (b.z - a.z) * frac,
-      );
-
-      v.trailMat.opacity = 0.95 * fade;
-      v.ballMat.opacity = fade;
-      v.ball.scale.setScalar(1);
-
-      // 撞墙闪光：越过 hitStep 后的一瞬
-      if (hitStep !== null && elapsedSteps >= hitStep) {
-        const sinceHit =
-          ((elapsedSteps - hitStep) / steps) *
-          (PHASE_BOUNDS.raceEnd - PHASE_BOUNDS.introEnd);
-        const flashT = clamp01(1 - sinceHit / FLASH_DURATION);
-        v.flash.visible = flashT > 0;
-        v.flashMat.opacity = 0.9 * flashT * fade;
-        v.flash.scale.setScalar(0.7 + sinceHit * 5);
+      // 花瓶与命中特效
+      if (!smashed) {
+        vaseGroup.visible = true;
+        vaseMat.emissiveIntensity =
+          0.7 + 0.3 * Math.sin(state.loopTime * 3.1);
+        vaseMat.opacity = fade;
+        baseRingMat.opacity = (0.35 + 0.15 * Math.sin(state.loopTime * 3.1)) * fade;
+        vaseLight.intensity = 5;
       } else {
-        v.flash.visible = false;
-        v.flashMat.opacity = 0;
+        vaseGroup.visible = false;
+        baseRingMat.opacity = 0;
+        vaseLight.intensity = 0;
+      }
+      pedestalMat.opacity = fade;
+
+      const sinceSmash =
+        smashed && state.phase === 'race'
+          ? state.localTime - smashWallTime
+          : Infinity;
+
+      if (sinceSmash >= 0 && sinceSmash < FLASH_DURATION) {
+        const ft = clamp01(1 - sinceSmash / FLASH_DURATION);
+        flash.visible = true;
+        flashMat.opacity = 0.9 * ft * fade;
+        flash.position.copy(smashOrigin);
+        flash.scale.setScalar(0.5 + (1 - ft) * 4.2);
+        flashRing.visible = true;
+        flashRingMat.opacity = 0.75 * ft * fade;
+        flashRing.position.copy(smashOrigin);
+        flashRing.scale.setScalar(0.6 + (1 - ft) * 5.5);
+        impactLight.position.copy(smashOrigin);
+        impactLight.intensity = 30 * ft;
+      } else {
+        flash.visible = false;
+        flashMat.opacity = 0;
+        flashRing.visible = false;
+        flashRingMat.opacity = 0;
+        impactLight.intensity = 0;
       }
 
-      // 结果阶段：冠军球呼吸发光
-      if (state.phase === 'result' && race.winnerIndex === ball.index) {
-        const pulse = 0.5 + 0.5 * Math.sin(state.localTime * 7);
-        v.ballMat.emissiveIntensity = 1.1 + 1.6 * pulse;
-        v.ball.scale.setScalar(1 + 0.22 * pulse);
+      if (sinceSmash >= 0 && sinceSmash < SHARD_LIFE) {
+        const t = sinceSmash;
+        const life = clamp01(1 - t / SHARD_LIFE);
+        shardMat.opacity = life * fade;
+        for (let i = 0; i < shards.length; i++) {
+          const shard = shards[i]!;
+          const vel = shardVels[i]!;
+          shard.visible = true;
+          shard.position.set(
+            smashOrigin.x + vel.x * t,
+            Math.max(
+              0.02,
+              smashOrigin.y + vel.y * t - 1.2 * t * t,
+            ),
+            vel.z * t,
+          );
+          shard.rotation.set(t * (1.7 + i * 0.13), t * (2.1 + i * 0.09), t * 1.3);
+          shard.scale.setScalar(0.7 + 0.6 * life);
+        }
       } else {
-        v.ballMat.emissiveIntensity = 0.8;
+        for (const shard of shards) shard.visible = false;
       }
     }
 
-    anchorMat.opacity = 0.9 * fade;
-    (scene.fog as THREE.FogExp2).density = baseFogDensity + state.resetProgress * 0.25;
+    fog.density = BASE_FOG + state.resetProgress * 0.14;
 
     renderer.render(scene, camera);
   }
@@ -324,22 +569,10 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
 
   function dispose(): void {
     window.removeEventListener('resize', onResize);
-    shellGeo.dispose();
-    shellMat.dispose();
-    shellWireGeo.dispose();
-    shellWireMat.dispose();
-    anchorGeo.dispose();
-    anchorMat.dispose();
-    ballGeo.dispose();
-    flashGeo.dispose();
-    for (const v of visuals) {
-      v.trailGeo.dispose();
-      v.trailMat.dispose();
-      v.ballMat.dispose();
-      v.flashMat.dispose();
-    }
+    for (const geo of geos) geo.dispose();
+    for (const mat of mats) mat.dispose();
     renderer.dispose();
   }
 
-  return { renderer, dispose, setRace, update };
+  return { renderer, dispose, setSimulation, update };
 }
