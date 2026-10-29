@@ -1,12 +1,7 @@
 import './style.css';
 import { hashStringToSeed } from './rng';
-import {
-  generateWalk,
-  DEFAULT_STEPS,
-  DEFAULT_STEP_SIZE,
-  type WalkResult,
-} from './walk';
-import { getTimelineState, LOOP_DURATION, type Phase } from './timeline';
+import { simulateRace, type RaceResult } from './race';
+import { getTimelineState, LOOP_DURATION } from './timeline';
 import { createDemoScene } from './scene';
 import { createHud } from './hud';
 import { applyExportHints } from './export-hints';
@@ -40,20 +35,11 @@ function writeSeedToUrl(seed: number): void {
 
 let lockedSeed = readSeedFromUrl();
 let currentSeed = lockedSeed ?? randomSeed();
-let walk: WalkResult = generateWalk({
-  seed: currentSeed,
-  steps: DEFAULT_STEPS,
-  stepSize: DEFAULT_STEP_SIZE,
-});
-demo.setWalk(walk);
-hud.setPhase('intro', {
-  pathLength: walk.pathLength,
-  displacement: walk.displacement,
-  seed: walk.seed,
-});
+let race: RaceResult = simulateRace(currentSeed);
+demo.setRace(race);
+hud.setPhase('intro', { seed: race.seed, race });
 
 let epoch = performance.now();
-let lastPhase: Phase | null = null;
 let lastLoopIndex = 0;
 
 function restart(seed: number, updateUrl: boolean): void {
@@ -62,20 +48,11 @@ function restart(seed: number, updateUrl: boolean): void {
     lockedSeed = seed;
     writeSeedToUrl(seed);
   }
-  walk = generateWalk({
-    seed: currentSeed,
-    steps: DEFAULT_STEPS,
-    stepSize: DEFAULT_STEP_SIZE,
-  });
-  demo.setWalk(walk);
+  race = simulateRace(currentSeed);
+  demo.setRace(race);
   epoch = performance.now();
-  lastPhase = null;
   lastLoopIndex = 0;
-  hud.setPhase('intro', {
-    pathLength: walk.pathLength,
-    displacement: walk.displacement,
-    seed: walk.seed,
-  });
+  hud.setPhase('intro', { seed: race.seed, race });
 }
 
 function onRerun(): void {
@@ -99,35 +76,18 @@ function tick(now: number): void {
     // 自动循环：未锁定则每圈新 seed；锁定则同 seed 复播
     if (lockedSeed === null) {
       currentSeed = randomSeed();
-      walk = generateWalk({
-        seed: currentSeed,
-        steps: DEFAULT_STEPS,
-        stepSize: DEFAULT_STEP_SIZE,
-      });
-      demo.setWalk(walk);
-    } else {
-      // 同 seed 重播：重置几何
-      demo.setWalk(walk);
+      race = simulateRace(currentSeed);
     }
+    demo.setRace(race);
   }
 
   const state = getTimelineState(elapsed);
   demo.update(state);
-
-  if (state.phase !== lastPhase) {
-    lastPhase = state.phase;
-    hud.setPhase(state.phase, {
-      pathLength: walk.pathLength,
-      displacement: walk.displacement,
-      seed: walk.seed,
-    });
-  } else if (state.phase === 'compare') {
-    hud.setPhase('compare', {
-      pathLength: walk.pathLength,
-      displacement: walk.displacement,
-      seed: walk.seed,
-    });
-  }
+  hud.setPhase(state.phase, {
+    seed: race.seed,
+    race,
+    raceSeconds: state.phase === 'race' ? state.localTime : undefined,
+  });
 
   requestAnimationFrame(tick);
 }
