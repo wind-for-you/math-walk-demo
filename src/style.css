@@ -65,17 +65,87 @@ body,
   letter-spacing: 0.08em;
 }
 
-.hud-compare {
-  font-size: clamp(12px, 3.2vw, 18px);
-  line-height: 1.55;
-  color: rgba(220, 200, 170, 0.82);
+.hud-clock {
+  font-size: clamp(18px, 5vw, 28px);
+  font-variant-numeric: tabular-nums;
+  color: rgba(120, 220, 255, 0.9);
+  letter-spacing: 0.06em;
+  margin-bottom: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  text-shadow: 0 0 18px rgba(80, 200, 255, 0.35);
+}
+
+.hud-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem 1rem;
+  margin-bottom: 0.9rem;
+  font-size: clamp(11px, 2.8vw, 15px);
+  color: rgba(200, 210, 224, 0.7);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hud-chip.is-hit {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.hud-dot {
+  display: inline-block;
+  width: 0.68em;
+  height: 0.68em;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
+}
+
+.hud-result {
+  font-size: clamp(14px, 3.6vw, 20px);
+  line-height: 1.6;
+  color: rgba(210, 220, 235, 0.88);
+  opacity: 0;
   transition: opacity 0.5s ease;
 }
 
-.hud-compare .hud-note {
-  margin-top: 0.35rem;
+.hud-ball-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.hud-ball-name {
+  width: 3.2em;
+  text-align: left;
+  color: rgba(200, 210, 224, 0.72);
+}
+
+.hud-ball-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-ball-line.is-winner {
+  color: #ffffff;
+  font-weight: 600;
+  text-shadow: 0 0 16px rgba(120, 220, 255, 0.55);
+}
+
+.hud-ball-line.is-winner .hud-dot {
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+}
+
+.hud-result .hud-note {
+  margin-top: 0.6rem;
   font-size: 0.92em;
-  color: rgba(255, 154, 90, 0.85);
+  color: rgba(255, 200, 120, 0.9);
+  letter-spacing: 0.08em;
 }
 
 /* 竖屏默认强调上下安全；横屏略收左右边距即可 */
