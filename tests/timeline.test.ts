@@ -2,8 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   phaseAt,
   getTimelineState,
+  raceSimTime,
   LOOP_DURATION,
   PHASE_BOUNDS,
+  RACE_DURATION_SECONDS,
+  RACE_SIM_SECONDS,
+  SLOW_MO_FACTOR,
 } from '../src/timeline';
 
 describe('常量', () => {
@@ -34,6 +38,22 @@ describe('phaseAt', () => {
     expect(phaseAt(30)).toBe('race');
     expect(phaseAt(48 + 19)).toBe('race');
     expect(phaseAt(56 + 23)).toBe('result');
+  });
+});
+
+describe('单摆赛程慢放', () => {
+  it('2.4s 物理赛程铺满 20s 竞速段', () => {
+    expect(RACE_SIM_SECONDS).toBe(2.4);
+    expect(RACE_DURATION_SECONDS).toBe(20);
+    expect(SLOW_MO_FACTOR).toBeCloseTo(20 / 2.4, 10);
+  });
+
+  it('raceSimTime 线性映射并夹紧', () => {
+    expect(raceSimTime(0)).toBe(0);
+    expect(raceSimTime(0.5)).toBeCloseTo(1.2, 10);
+    expect(raceSimTime(1)).toBe(RACE_SIM_SECONDS);
+    expect(raceSimTime(-1)).toBe(0);
+    expect(raceSimTime(2)).toBe(RACE_SIM_SECONDS);
   });
 });
 

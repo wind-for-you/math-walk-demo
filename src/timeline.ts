@@ -9,9 +9,23 @@ export const PHASE_BOUNDS = {
   resetEnd: 28,
 } as const;
 
-/** 竞走段时长（秒），用于把撞墙步数换算成时间 */
+/** 竞速段墙钟时长（秒） */
 export const RACE_DURATION_SECONDS =
   PHASE_BOUNDS.raceEnd - PHASE_BOUNDS.introEnd;
+
+/**
+ * 单摆物理赛程（秒）：20s 竞速段用慢放呈现这 2.4s 的摆动，
+ * 摆稳的悬念铺满整段，砸中后再留时间看阻尼收场。
+ */
+export const RACE_SIM_SECONDS = 2.4;
+
+/** 慢放倍数：墙钟时长 / 物理时长 ≈ 8.3× */
+export const SLOW_MO_FACTOR = RACE_DURATION_SECONDS / RACE_SIM_SECONDS;
+
+/** 竞速进度 → 物理时间（秒），夹在 [0, RACE_SIM_SECONDS] */
+export function raceSimTime(raceProgress: number): number {
+  return clamp01(raceProgress) * RACE_SIM_SECONDS;
+}
 
 export type TimelineState = {
   phase: Phase;
