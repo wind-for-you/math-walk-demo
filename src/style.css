@@ -12,13 +12,19 @@ body,
   overflow: hidden;
   background: #05070f;
   color: #c8d2e0;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC',
+    'Noto Sans SC', sans-serif;
+}
+
+#app {
+  position: relative;
 }
 
 #c {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: manipulation;
 }
 
 #hud {
@@ -26,4 +32,53 @@ body,
   inset: 0;
   pointer-events: none;
   z-index: 2;
+}
+
+.export-safe .hud-top {
+  position: absolute;
+  top: var(--safe-top, 4.5vh);
+  left: 5vw;
+  right: 5vw;
+  text-align: center;
+}
+
+.export-safe .hud-bottom {
+  position: absolute;
+  bottom: var(--safe-bottom, 4.5vh);
+  left: 5vw;
+  right: 5vw;
+  text-align: center;
+}
+
+.hud-title {
+  font-size: clamp(14px, 3.6vw, 22px);
+  letter-spacing: 0.35em;
+  font-weight: 500;
+  color: rgba(200, 210, 224, 0.72);
+  transition: opacity 0.4s ease;
+}
+
+.hud-seed {
+  margin-top: 0.4rem;
+  font-size: clamp(10px, 2.4vw, 13px);
+  color: rgba(160, 176, 196, 0.45);
+  letter-spacing: 0.08em;
+}
+
+.hud-compare {
+  font-size: clamp(12px, 3.2vw, 18px);
+  line-height: 1.55;
+  color: rgba(220, 200, 170, 0.82);
+  transition: opacity 0.5s ease;
+}
+
+.hud-compare .hud-note {
+  margin-top: 0.35rem;
+  font-size: 0.92em;
+  color: rgba(255, 154, 90, 0.85);
+}
+
+/* 竖屏默认强调上下安全；横屏略收左右边距即可 */
+.portrait .hud-title {
+  letter-spacing: 0.42em;
 }
