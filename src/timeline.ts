@@ -1,20 +1,24 @@
-export type Phase = 'intro' | 'walk' | 'compare' | 'reset';
+export type Phase = 'intro' | 'race' | 'result' | 'reset';
 
-export const LOOP_DURATION = 24;
+export const LOOP_DURATION = 28;
 
 export const PHASE_BOUNDS = {
   introEnd: 2,
-  walkEnd: 18,
-  compareEnd: 22,
-  resetEnd: 24,
+  raceEnd: 22,
+  resultEnd: 26,
+  resetEnd: 28,
 } as const;
+
+/** 竞走段时长（秒），用于把撞墙步数换算成时间 */
+export const RACE_DURATION_SECONDS =
+  PHASE_BOUNDS.raceEnd - PHASE_BOUNDS.introEnd;
 
 export type TimelineState = {
   phase: Phase;
   localTime: number;
   loopTime: number;
-  walkProgress: number;
-  compareProgress: number;
+  raceProgress: number;
+  resultProgress: number;
   resetProgress: number;
 };
 
@@ -25,8 +29,8 @@ function positiveMod(n: number, m: number): number {
 export function phaseAt(t: number): Phase {
   const loopTime = positiveMod(t, LOOP_DURATION);
   if (loopTime < PHASE_BOUNDS.introEnd) return 'intro';
-  if (loopTime < PHASE_BOUNDS.walkEnd) return 'walk';
-  if (loopTime < PHASE_BOUNDS.compareEnd) return 'compare';
+  if (loopTime < PHASE_BOUNDS.raceEnd) return 'race';
+  if (loopTime < PHASE_BOUNDS.resultEnd) return 'result';
   return 'reset';
 }
 
@@ -38,39 +42,39 @@ export function getTimelineState(elapsedSeconds: number): TimelineState {
   const loopTime = positiveMod(elapsedSeconds, LOOP_DURATION);
   const phase = phaseAt(loopTime);
 
-  const walkDur = PHASE_BOUNDS.walkEnd - PHASE_BOUNDS.introEnd; // 16
-  const compareDur = PHASE_BOUNDS.compareEnd - PHASE_BOUNDS.walkEnd; // 4
-  const resetDur = PHASE_BOUNDS.resetEnd - PHASE_BOUNDS.compareEnd; // 2
+  const raceDur = RACE_DURATION_SECONDS; // 20
+  const resultDur = PHASE_BOUNDS.resultEnd - PHASE_BOUNDS.raceEnd; // 4
+  const resetDur = PHASE_BOUNDS.resetEnd - PHASE_BOUNDS.resultEnd; // 2
 
-  let walkProgress = 0;
-  if (loopTime >= PHASE_BOUNDS.walkEnd) walkProgress = 1;
+  let raceProgress = 0;
+  if (loopTime >= PHASE_BOUNDS.raceEnd) raceProgress = 1;
   else if (loopTime > PHASE_BOUNDS.introEnd) {
-    walkProgress = (loopTime - PHASE_BOUNDS.introEnd) / walkDur;
+    raceProgress = (loopTime - PHASE_BOUNDS.introEnd) / raceDur;
   }
 
-  let compareProgress = 0;
-  if (loopTime >= PHASE_BOUNDS.compareEnd) compareProgress = 1;
-  else if (loopTime > PHASE_BOUNDS.walkEnd) {
-    compareProgress = (loopTime - PHASE_BOUNDS.walkEnd) / compareDur;
+  let resultProgress = 0;
+  if (loopTime >= PHASE_BOUNDS.resultEnd) resultProgress = 1;
+  else if (loopTime > PHASE_BOUNDS.raceEnd) {
+    resultProgress = (loopTime - PHASE_BOUNDS.raceEnd) / resultDur;
   }
 
   let resetProgress = 0;
-  if (loopTime >= PHASE_BOUNDS.compareEnd) {
-    resetProgress = (loopTime - PHASE_BOUNDS.compareEnd) / resetDur;
+  if (loopTime >= PHASE_BOUNDS.resultEnd) {
+    resetProgress = (loopTime - PHASE_BOUNDS.resultEnd) / resetDur;
   }
 
   let localTime = loopTime;
   if (phase === 'intro') localTime = loopTime;
-  else if (phase === 'walk') localTime = loopTime - PHASE_BOUNDS.introEnd;
-  else if (phase === 'compare') localTime = loopTime - PHASE_BOUNDS.walkEnd;
-  else localTime = loopTime - PHASE_BOUNDS.compareEnd;
+  else if (phase === 'race') localTime = loopTime - PHASE_BOUNDS.introEnd;
+  else if (phase === 'result') localTime = loopTime - PHASE_BOUNDS.raceEnd;
+  else localTime = loopTime - PHASE_BOUNDS.resultEnd;
 
   return {
     phase,
     localTime,
     loopTime,
-    walkProgress: clamp01(walkProgress),
-    compareProgress: clamp01(compareProgress),
+    raceProgress: clamp01(raceProgress),
+    resultProgress: clamp01(resultProgress),
     resetProgress: clamp01(resetProgress),
   };
 }
