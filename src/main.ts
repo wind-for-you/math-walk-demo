@@ -1,7 +1,12 @@
 import './style.css';
 import { hashStringToSeed } from './rng';
-import { simulateRace, type RaceResult } from './race';
-import { getTimelineState, LOOP_DURATION } from './timeline';
+import { SMASH_DT, simulateSmash, type SmashSimulation } from './pendulum';
+import {
+  getTimelineState,
+  LOOP_DURATION,
+  RACE_SIM_SECONDS,
+  raceSimTime,
+} from './timeline';
 import { createDemoScene } from './scene';
 import { createHud } from './hud';
 import { applyExportHints } from './export-hints';
@@ -16,6 +21,10 @@ if (!canvas || !hudRoot || !appRoot) {
 applyExportHints(appRoot);
 const hud = createHud(hudRoot);
 const demo = createDemoScene(canvas);
+
+function createSimulation(): SmashSimulation {
+  return simulateSmash(RACE_SIM_SECONDS, SMASH_DT);
+}
 
 function readSeedFromUrl(): number | null {
   const raw = new URLSearchParams(window.location.search).get('seed');
@@ -35,9 +44,9 @@ function writeSeedToUrl(seed: number): void {
 
 let lockedSeed = readSeedFromUrl();
 let currentSeed = lockedSeed ?? randomSeed();
-let race: RaceResult = simulateRace(currentSeed);
-demo.setRace(race);
-hud.setPhase('intro', { seed: race.seed, race });
+let sim = createSimulation();
+demo.setSimulation(sim, currentSeed);
+hud.setPhase('intro', { seed: currentSeed, sim, raceSeconds: 0 });
 
 let epoch = performance.now();
 let lastLoopIndex = 0;
@@ -48,16 +57,15 @@ function restart(seed: number, updateUrl: boolean): void {
     lockedSeed = seed;
     writeSeedToUrl(seed);
   }
-  race = simulateRace(currentSeed);
-  demo.setRace(race);
+  sim = createSimulation();
+  demo.setSimulation(sim, currentSeed);
   epoch = performance.now();
   lastLoopIndex = 0;
-  hud.setPhase('intro', { seed: race.seed, race });
+  hud.setPhase('intro', { seed: currentSeed, sim, raceSeconds: 0 });
 }
 
 function onRerun(): void {
-  const next = randomSeed();
-  restart(next, true);
+  restart(randomSeed(), true);
 }
 
 window.addEventListener('keydown', (e) => {
@@ -73,20 +81,20 @@ function tick(now: number): void {
   const loopIndex = Math.floor(elapsed / LOOP_DURATION);
   if (loopIndex > lastLoopIndex) {
     lastLoopIndex = loopIndex;
-    // 自动循环：未锁定则每圈新 seed；锁定则同 seed 复播
+    // 自动循环：未锁定则每圈换 seed（只影响镜头）；锁定则同 seed 复播
     if (lockedSeed === null) {
       currentSeed = randomSeed();
-      race = simulateRace(currentSeed);
+      sim = createSimulation();
     }
-    demo.setRace(race);
+    demo.setSimulation(sim, currentSeed);
   }
 
   const state = getTimelineState(elapsed);
   demo.update(state);
   hud.setPhase(state.phase, {
-    seed: race.seed,
-    race,
-    raceSeconds: state.phase === 'race' ? state.localTime : undefined,
+    seed: currentSeed,
+    sim,
+    raceSeconds: raceSimTime(state.raceProgress),
   });
 
   requestAnimationFrame(tick);

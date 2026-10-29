@@ -20,6 +20,36 @@ body,
   position: relative;
 }
 
+/* 上下渐暗，保证标题与结果在亮场景上也清晰 */
+#app::before,
+#app::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 26vh;
+  pointer-events: none;
+  z-index: 1;
+}
+
+#app::before {
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(5, 7, 15, 0.72),
+    rgba(5, 7, 15, 0)
+  );
+}
+
+#app::after {
+  bottom: 0;
+  background: linear-gradient(
+    to top,
+    rgba(5, 7, 15, 0.78),
+    rgba(5, 7, 15, 0)
+  );
+}
+
 #c {
   display: block;
   width: 100%;
@@ -51,18 +81,31 @@ body,
 }
 
 .hud-title {
-  font-size: clamp(14px, 3.6vw, 22px);
-  letter-spacing: 0.35em;
-  font-weight: 500;
-  color: rgba(200, 210, 224, 0.72);
-  transition: opacity 0.4s ease;
+  font-size: clamp(18px, 5vw, 30px);
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  line-height: 1.5;
+  color: rgba(238, 244, 252, 0.94);
+  text-wrap: balance;
+  text-shadow: 0 0 26px rgba(120, 200, 255, 0.28);
+  transition: opacity 0.5s ease;
+}
+
+.hud-tagline {
+  margin-top: 0.65rem;
+  font-size: clamp(11px, 2.8vw, 15px);
+  letter-spacing: 0.2em;
+  color: rgba(255, 200, 120, 0.82);
+  opacity: 0;
+  transition: opacity 0.5s ease;
 }
 
 .hud-seed {
-  margin-top: 0.4rem;
+  margin-top: 0.55rem;
   font-size: clamp(10px, 2.4vw, 13px);
   color: rgba(160, 176, 196, 0.45);
   letter-spacing: 0.08em;
+  transition: opacity 0.4s ease;
 }
 
 .hud-clock {
@@ -74,6 +117,15 @@ body,
   opacity: 0;
   transition: opacity 0.35s ease;
   text-shadow: 0 0 18px rgba(80, 200, 255, 0.35);
+}
+
+.hud-slow {
+  margin-left: 0.7em;
+  font-size: 0.46em;
+  letter-spacing: 0.16em;
+  color: rgba(160, 190, 220, 0.55);
+  vertical-align: middle;
+  text-shadow: none;
 }
 
 .hud-status {
@@ -96,6 +148,20 @@ body,
 
 .hud-chip.is-hit {
   color: rgba(255, 255, 255, 0.92);
+}
+
+.hud-chip.is-winner {
+  color: #ffe2a8;
+  text-shadow: 0 0 14px rgba(255, 190, 90, 0.55);
+}
+
+.hud-chip-meta {
+  font-variant-numeric: tabular-nums;
+  color: rgba(180, 196, 216, 0.62);
+}
+
+.hud-chip.is-hit .hud-chip-meta {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .hud-dot {
@@ -122,9 +188,17 @@ body,
 }
 
 .hud-ball-name {
-  width: 3.2em;
+  width: 3.6em;
   text-align: left;
-  color: rgba(200, 210, 224, 0.72);
+  color: rgba(200, 210, 224, 0.78);
+}
+
+.hud-ball-len {
+  width: 3.1em;
+  text-align: left;
+  font-size: 0.85em;
+  color: rgba(170, 188, 210, 0.55);
+  font-variant-numeric: tabular-nums;
 }
 
 .hud-ball-time {
@@ -142,13 +216,17 @@ body,
 }
 
 .hud-result .hud-note {
-  margin-top: 0.6rem;
-  font-size: 0.92em;
+  margin-top: 0.75rem;
+  font-size: 0.9em;
   color: rgba(255, 200, 120, 0.9);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.16em;
 }
 
 /* 竖屏默认强调上下安全；横屏略收左右边距即可 */
 .portrait .hud-title {
-  letter-spacing: 0.42em;
+  letter-spacing: 0.12em;
+}
+
+.portrait .hud-tagline {
+  letter-spacing: 0.16em;
 }

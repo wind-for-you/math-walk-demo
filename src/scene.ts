@@ -39,10 +39,10 @@ const SHARD_COUNT = 18;
 const BASE_FOG = 0.026;
 
 const CAMERA_FOV = 50;
-const FIT_HEIGHT = 4.7;
-const WIDE_WIDTH = 8.8;
-const CLOSE_WIDTH = 5.0;
-const WIDE_CENTER = 0.4;
+const FIT_HEIGHT = 7.0;
+const WIDE_WIDTH = 7.2;
+const CLOSE_WIDTH = 4.8;
+const WIDE_CENTER = 0.5;
 const CLOSE_CENTER = -0.5;
 
 function clamp01(v: number): number {
@@ -128,7 +128,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
   geos.push(floorGeo);
   mats.push(floorMat);
 
-  const grid = new THREE.GridHelper(12, 24, 0x1b3045, 0x0c1520);
+  const grid = new THREE.GridHelper(10, 20, 0x142435, 0x0a111a);
   grid.position.y = -0.03;
   root.add(grid);
   geos.push(grid.geometry);
@@ -149,7 +149,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
 
   // ---- 三个摆 ----
   const bobGeo = new THREE.SphereGeometry(BOB_RADIUS, 24, 16);
-  const glowGeo = new THREE.SphereGeometry(BOB_RADIUS * 1.9, 16, 12);
+  const glowGeo = new THREE.SphereGeometry(BOB_RADIUS * 1.7, 16, 12);
   const anchorGeo = new THREE.SphereGeometry(0.05, 12, 12);
   geos.push(bobGeo, glowGeo, anchorGeo);
 
@@ -195,7 +195,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
     const glowMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.18,
+      opacity: 0.14,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
@@ -228,6 +228,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
   // ---- 花瓶 ----
   const vaseGroup = new THREE.Group();
   vaseGroup.position.set(VASE.x, VASE.y, 0);
+  vaseGroup.scale.setScalar(1.12);
   root.add(vaseGroup);
 
   const profile = [
@@ -390,7 +391,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
       v.bobMat.emissiveIntensity = 1.1;
       v.bobMat.opacity = 1;
       v.bob.scale.setScalar(1);
-      v.glowMat.opacity = 0.18;
+      v.glowMat.opacity = 0.14;
       v.ropeMat.opacity = 0.75;
     }
     fog.density = BASE_FOG;
@@ -398,7 +399,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
   }
 
   function updateCamera(state: TimelineState, simTime: number): void {
-    const zoom = smoothstep(0.15, 1.1, simTime);
+    const zoom = smoothstep(0.35, 1.35, simTime);
     let width = WIDE_WIDTH + (CLOSE_WIDTH - WIDE_WIDTH) * zoom;
     const centerX = WIDE_CENTER + (CLOSE_CENTER - WIDE_CENTER) * zoom;
     if (state.phase === 'result') {
@@ -482,7 +483,7 @@ export function createDemoScene(canvas: HTMLCanvasElement): DemoScene {
         } else {
           v.bobMat.emissiveIntensity = 1.1;
           v.bob.scale.setScalar(1);
-          v.glowMat.opacity = 0.18 * fade;
+          v.glowMat.opacity = 0.14 * fade;
         }
         v.bobMat.opacity = fade;
         v.ropeMat.opacity = 0.75 * fade;
